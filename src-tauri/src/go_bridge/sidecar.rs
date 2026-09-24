@@ -51,8 +51,12 @@ struct GoBridgeInner {
 
 impl GoBridge {
     /// Intenta spawnear el sidecar Go. Si falla, deja `inner = None`.
-    pub async fn new() -> Self {
-        let bin = Self::resolve_binary_path();
+    ///
+    /// `app` se usa para resolver `resource_dir()` (donde Tauri instala
+    /// `bundle.resources` = `binaries/killer-go` cuando la app está
+    /// instalada vía .deb/AppImage). En dev, cae a los paths relativos.
+    pub async fn new(app: &tauri::AppHandle) -> Self {
+        let bin = Self::resolve_binary_path(app);
         eprintln!("[rust] resolving go sidecar at: {}", bin.display());
 
         // Intentar spawnear
@@ -81,8 +85,50 @@ impl GoBridge {
         }
     }
 
-    fn resolve_binary_path() -> PathBuf {
-        // Orden de búsqueda:
+    fn resolve_binary_path(app: &tauri::AppHandle) -> PathBuf {
+        use tauri::Manager;
+
+        // 0. `bundle.resources` (app instalada .deb/AppImage): Tauri copia
+        //    `src-tauri/binaries/killer-go` a `<resource_dir>/killer-go`.
+        //    ESTE es el caso que antes fallaba: el binario no estaba empaquetado
+        //    y `resolve` solo miraba paths relativos al cwd -> mock siempre.
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            for name in ["killer-go", "killer-go-x86_64-unknown-linux-gnu"] {
+                let p = resource_dir.join(name);
+                if p.exists() {
+                    return p;
+                }
+            }
+            // Algunos bundles lo ponen en `binaries/` dentro de resources
+            for name in ["binaries/killer-go", "binaries/killer-go-x86_64-unknown-linux-gnu"] {
+                let p = resource_dir.join(name);
+                if p.exists() {
+                    return p;
+                }
+            }
+        }
+
+        // 0b. Junto al ejecutable instalado (`/usr/bin/killer` -> `/usr/bin/killer-go`,
+        //     o `.../resources/` al lado). Cubre layouts alternos del bundle.
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                for name in ["killer-go", "killer-go-x86_64-unknown-linux-gnu"] {
+                    let p = dir.join(name);
+                    if p.exists() {
+                        return p;
+                    }
+                }
+                // AppImage monta resources al lado del binario
+                for sub in ["../resources/killer-go", "../lib/killer/killer-go", "../lib/killer/binaries/killer-go"] {
+                    let p = dir.join(sub);
+                    if p.exists() {
+                        return p;
+                    }
+                }
+            }
+        }
+
+        // Orden de búsqueda (dev):
         // 1. `src-tauri/binaries/killer-go-<triple>` (Tauri sidecar convención)
         // 2. `../go/killer-go` (dev local `go build -o /tmp/killer-go`)
         // 3. `go/killer-go` desde cwd de `cargo run`
@@ -137,6 +183,14 @@ impl GoBridge {
     async fn spawn_child(bin: &Path) -> Result<(Child, ChildStdin, ChildStdout), String> {
         if !bin.exists() {
             return Err(format!("binary not found at {}", bin.display()));
+        }
+
+        // Los `bundle.resources` pueden perder el bit +x al instalarse
+        // (.deb/AppImage). Asegurarlo antes de spawnear.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(bin, std::fs::Permissions::from_mode(0o755));
         }
 
         let mut child = Command::new(bin)

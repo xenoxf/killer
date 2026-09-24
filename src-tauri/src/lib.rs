@@ -32,8 +32,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // Setup: spawnear Go sidecar antes de que la ventana cargue
         .setup(|app| {
-            // `block_on` porque `setup` es síncrono pero GoBridge::new es async
-            let bridge = tauri::async_runtime::block_on(GoBridge::new());
+            // `block_on` porque `setup` es síncrono pero GoBridge::new es async.
+            // Se pasa el AppHandle para resolver `resource_dir()` (app instalada).
+            let bridge = tauri::async_runtime::block_on(GoBridge::new(app.handle()));
             eprintln!(
                 "[rust] GoBridge available: {} (binary: {})",
                 bridge.is_available(),

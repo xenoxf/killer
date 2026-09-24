@@ -2,6 +2,8 @@ import {
   createContext,
   useContext,
   createSignal,
+  createEffect,
+  onMount,
   type JSX,
   type Accessor,
 } from "solid-js";
@@ -72,11 +74,28 @@ export const themes: ThemeDef[] = [
 const STORAGE_KEY = "killer-theme";
 const THEME_CLASSES = themes.map((t) => t.className).filter(Boolean);
 
+function readStoredTheme(): ThemeName {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY) as ThemeName | null;
+    if (stored && themes.some((t) => t.name === stored)) return stored;
+  } catch {
+    // localStorage no disponible (ej: Tauri con restricciones) -> default
+  }
+  return "light";
+}
+
 function applyThemeClass(name: ThemeName) {
-  const def = themes.find((t) => t.name === name) ?? themes[0];
-  const root = document.documentElement;
-  THEME_CLASSES.forEach((c) => root.classList.remove(c));
-  if (def.className) root.classList.add(def.className);
+  try {
+    const def = themes.find((t) => t.name === name) ?? themes[0];
+    const root = document.documentElement;
+    THEME_CLASSES.forEach((c) => root.classList.remove(c));
+    if (def.className) root.classList.add(def.className);
+    // Atributo para debugging + color-scheme para scrollbars/form controls
+    root.dataset.theme = def.name;
+    root.style.colorScheme = def.name === "dark" ? "dark" : "light";
+  } catch {
+    // document no disponible (SSR/tests) -> no-op
+  }
 }
 
 interface ThemeContextValue {
@@ -87,16 +106,20 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue>();
 
 export function ThemeProvider(props: { children: JSX.Element }) {
-  const stored =
-    (localStorage.getItem(STORAGE_KEY) as ThemeName | null) ?? "light";
-  const initial = themes.some((t) => t.name === stored) ? stored : "light";
+  const [theme, setThemeSignal] = createSignal<ThemeName>(readStoredTheme());
 
-  const [theme, setThemeSignal] = createSignal<ThemeName>(initial);
-  applyThemeClass(initial);
+  // Aplicar al montar (evita tocar `document` durante el render, que en
+  // Solid puede ejecutarse más de una vez) y en cada cambio.
+  onMount(() => applyThemeClass(theme()));
+  createEffect(() => applyThemeClass(theme()));
 
   const setTheme = (name: ThemeName) => {
     setThemeSignal(name);
-    localStorage.setItem(STORAGE_KEY, name);
+    try {
+      localStorage.setItem(STORAGE_KEY, name);
+    } catch {
+      // storage bloqueado -> el tema igual aplica en memoria
+    }
     applyThemeClass(name);
   };
 

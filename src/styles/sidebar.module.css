@@ -11,7 +11,13 @@
   border: 1px solid hsl(var(--border));
   border-radius: 16px  5px 5px;
   box-sizing: border-box;
-  overflow: hidden;
+  /* OJO: no usar `overflow: hidden` aquí: recorta el dropdown de temas
+     (ThemeToggleSidebar) que se posiciona fuera del header (left: 100%).
+     `visible` permite que el dropdown flote sobre el contenido. */
+  overflow: visible;
+  position: relative;
+  z-index: 50;
+  background-color: hsl(var(--background));
 }
 
 .container-secs {

@@ -76,10 +76,13 @@
 .dropdown {
   position: absolute;
   bottom: 0;
-  left: 56px;
+  /* Anclar al borde derecho del sidebar (que mide 70px) en vez de un
+     offset fijo de 56px: así no queda recortado ni depende del ancho. */
+  left: calc(100% + 12px);
   width: 14rem;
   padding: 0.5rem;
   background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border));
   border-radius: 0.75rem;
   box-shadow: var(--shadow-lg);
